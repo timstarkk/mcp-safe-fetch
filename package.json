@@ -1,0 +1,45 @@
+{
+  "name": "mcp-safe-fetch",
+  "version": "0.1.0",
+  "description": "Deterministic content sanitization MCP server for agentic coding tools",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "mcp-safe-fetch": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "sanitize",
+    "prompt-injection",
+    "claude",
+    "llm",
+    "security"
+  ],
+  "author": "Tim Stark <tim@timstark.dev>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/timstarkk/mcp-safe-fetch"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.0",
+    "cheerio": "^1.2.0",
+    "turndown": "^7.2.2",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/turndown": "^5.0.5",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
