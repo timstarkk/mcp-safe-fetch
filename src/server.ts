@@ -19,15 +19,20 @@ export async function startServer(): Promise<void> {
     totalStripped: {
       hiddenElements: 0, htmlComments: 0, scriptTags: 0,
       styleTags: 0, noscriptTags: 0, metaTags: 0,
+      offScreenElements: 0, sameColorText: 0,
       zeroWidthChars: 0, controlChars: 0, bidiOverrides: 0,
-      unicodeTags: 0, variationSelectors: 0, llmDelimiters: 0,
+      unicodeTags: 0, variationSelectors: 0,
+      base64Payloads: 0, hexPayloads: 0, dataUris: 0,
+      exfiltrationUrls: 0,
+      llmDelimiters: 0,
+      customPatterns: 0,
     },
     urls: [],
   };
 
   const server = new McpServer({
     name: 'safe-fetch',
-    version: '0.1.0',
+    version: '0.2.0',
   });
 
   server.registerTool(
@@ -43,7 +48,7 @@ export async function startServer(): Promise<void> {
         const startTime = Date.now();
 
         const fetched = await fetchUrl(url);
-        const result = sanitize(fetched.html);
+        const result = sanitize(fetched.html, config);
         const durationMs = Date.now() - startTime;
 
         // Update session stats
@@ -73,6 +78,11 @@ export async function startServer(): Promise<void> {
         if (result.stats.scriptTags > 0) strippedItems.push(`${result.stats.scriptTags} script tags`);
         if (result.stats.styleTags > 0) strippedItems.push(`${result.stats.styleTags} style tags`);
         if (result.stats.zeroWidthChars > 0) strippedItems.push(`${result.stats.zeroWidthChars} zero-width chars`);
+        if (result.stats.base64Payloads > 0) strippedItems.push(`${result.stats.base64Payloads} base64 payloads`);
+        if (result.stats.dataUris > 0) strippedItems.push(`${result.stats.dataUris} data URIs`);
+        if (result.stats.exfiltrationUrls > 0) strippedItems.push(`${result.stats.exfiltrationUrls} exfiltration URLs`);
+        if (result.stats.offScreenElements > 0) strippedItems.push(`${result.stats.offScreenElements} off-screen elements`);
+        if (result.stats.sameColorText > 0) strippedItems.push(`${result.stats.sameColorText} same-color text`);
         if (result.stats.llmDelimiters > 0) strippedItems.push(`${result.stats.llmDelimiters} LLM delimiters`);
 
         const header = strippedItems.length > 0

@@ -8,7 +8,7 @@ export interface FetchResult {
 export async function fetchUrl(url: string): Promise<FetchResult> {
   const response = await fetch(url, {
     headers: {
-      'User-Agent': 'mcp-safe-fetch/0.1',
+      'User-Agent': 'mcp-safe-fetch/0.2',
       'Accept': 'text/html,application/xhtml+xml,*/*',
     },
     redirect: 'follow',

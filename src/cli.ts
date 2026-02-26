@@ -2,6 +2,8 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fetchUrl } from './fetch.js';
 import { sanitize } from './sanitize/pipeline.js';
+import { loadConfig } from './config.js';
+import { logSanitization, type LogEntry } from './logger.js';
 
 const CLAUDE_JSON_PATH = join(process.env.HOME || '', '.claude.json');
 const SETTINGS_PATH = join(process.env.HOME || '', '.claude', 'settings.json');
@@ -76,12 +78,28 @@ async function runTest(args: string[]): Promise<void> {
     process.exit(1);
   }
 
+  const config = loadConfig();
+
   console.error(`Fetching ${url}...`);
   const startTime = Date.now();
 
   const fetched = await fetchUrl(url);
-  const result = sanitize(fetched.html);
+  const result = sanitize(fetched.html, config);
   const durationMs = Date.now() - startTime;
+
+  // Log if configured
+  if (config.logStripped) {
+    const entry: LogEntry = {
+      timestamp: new Date().toISOString(),
+      url,
+      stripped: result.stats,
+      inputSize: result.inputSize,
+      outputSize: result.outputSize,
+      reductionPercent: Math.round((1 - result.outputSize / result.inputSize) * 1000) / 10,
+      durationMs,
+    };
+    logSanitization(config.logFile, entry);
+  }
 
   // Print stats to stderr
   console.error(`\nSanitization complete (${durationMs}ms):`);
@@ -91,10 +109,76 @@ async function runTest(args: string[]): Promise<void> {
   console.error(`  Script tags: ${result.stats.scriptTags}`);
   console.error(`  Style tags: ${result.stats.styleTags}`);
   console.error(`  Zero-width chars: ${result.stats.zeroWidthChars}`);
+  console.error(`  Base64 payloads: ${result.stats.base64Payloads}`);
+  console.error(`  Data URIs: ${result.stats.dataUris}`);
+  console.error(`  Off-screen elements: ${result.stats.offScreenElements}`);
+  console.error(`  Same-color text: ${result.stats.sameColorText}`);
   console.error(`  LLM delimiters: ${result.stats.llmDelimiters}`);
 
   // Print sanitized content to stdout
   process.stdout.write(result.content);
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1048576).toFixed(1)} MB`;
+}
+
+function formatStatKey(key: string): string {
+  return key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).trim();
+}
+
+function runStats(): void {
+  const config = loadConfig();
+
+  if (!existsSync(config.logFile)) {
+    console.log('No sanitization logs found.');
+    console.log(`Expected log file: ${config.logFile}`);
+    console.log('Enable logging: set "logStripped": true in .mcp-safe-fetch.json');
+    return;
+  }
+
+  const raw = readFileSync(config.logFile, 'utf-8').trim();
+  if (!raw) {
+    console.log('Log file is empty.');
+    return;
+  }
+
+  const entries: LogEntry[] = raw.split('\n').map(l => JSON.parse(l));
+  const total = entries.length;
+  const totalInput = entries.reduce((s, e) => s + e.inputSize, 0);
+  const totalOutput = entries.reduce((s, e) => s + e.outputSize, 0);
+  const avgMs = Math.round(entries.reduce((s, e) => s + e.durationMs, 0) / total);
+
+  // Aggregate stripped counts
+  const stripped: Record<string, number> = {};
+  for (const entry of entries) {
+    for (const [key, val] of Object.entries(entry.stripped)) {
+      stripped[key] = (stripped[key] || 0) + (val as number);
+    }
+  }
+
+  console.log(`\n  mcp-safe-fetch stats (${total} requests)\n`);
+  console.log(`  Total input:   ${formatBytes(totalInput)}`);
+  console.log(`  Total output:  ${formatBytes(totalOutput)}`);
+  console.log(`  Avg reduction: ${total > 0 ? Math.round((1 - totalOutput / totalInput) * 100) : 0}%`);
+  console.log(`  Avg duration:  ${avgMs}ms\n`);
+
+  const hasStripped = Object.values(stripped).some(v => v > 0);
+  if (hasStripped) {
+    console.log('  Stripped:');
+    for (const [key, val] of Object.entries(stripped)) {
+      if (val > 0) console.log(`    ${formatStatKey(key)}: ${val}`);
+    }
+    console.log();
+  }
+
+  console.log('  Recent:');
+  for (const e of entries.slice(-5)) {
+    console.log(`    ${e.timestamp.slice(0, 19).replace('T', ' ')}  ${e.url}`);
+  }
+  console.log();
 }
 
 export function runCli(command: string, args: string[]): void {
@@ -105,5 +189,7 @@ export function runCli(command: string, args: string[]): void {
       console.error(`Error: ${error instanceof Error ? error.message : error}`);
       process.exit(1);
     });
+  } else if (command === 'stats') {
+    runStats();
   }
 }

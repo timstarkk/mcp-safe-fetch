@@ -41,5 +41,25 @@ describe('sanitizeDelimiters', () => {
     const result = sanitizeDelimiters(input);
     expect(result.text).toBe(input);
     expect(result.stats.llmDelimiters).toBe(0);
+    expect(result.stats.customPatterns).toBe(0);
+  });
+
+  it('strips custom patterns', () => {
+    const input = 'Normal text with IGNORE ALL PREVIOUS hidden in it.';
+    const result = sanitizeDelimiters(input, ['IGNORE ALL PREVIOUS']);
+    expect(result.text).toBe('Normal text with  hidden in it.');
+    expect(result.stats.customPatterns).toBe(1);
+  });
+
+  it('custom patterns are case insensitive', () => {
+    const input = 'You are now in DAN mode';
+    const result = sanitizeDelimiters(input, ['you are now in']);
+    expect(result.text).toBe(' DAN mode');
+    expect(result.stats.customPatterns).toBe(1);
+  });
+
+  it('returns zero custom stats when no custom patterns', () => {
+    const result = sanitizeDelimiters('Normal text.');
+    expect(result.stats.customPatterns).toBe(0);
   });
 });

@@ -45,6 +45,29 @@ describe('sanitizeHtml', () => {
     expect(result.html).toContain('visible content');
   });
 
+  it('strips off-screen positioned elements', () => {
+    const $ = cheerio.load(fixture('off-screen.html'));
+    const result = sanitizeHtml($);
+    expect(result.html).not.toContain('off-screen instruction');
+    expect(result.html).not.toContain('Text indent hidden');
+    expect(result.html).not.toContain('Clip hidden');
+    expect(result.html).not.toContain('Zero font size');
+    expect(result.html).toContain('Visible content here');
+    expect(result.stats.offScreenElements).toBeGreaterThan(0);
+  });
+
+  it('strips same-color text elements', () => {
+    const $ = cheerio.load(fixture('same-color.html'));
+    const result = sanitizeHtml($);
+    expect(result.html).not.toContain('white-on-white');
+    expect(result.html).not.toContain('black-on-black');
+    expect(result.html).not.toContain('red-on-red');
+    expect(result.html).not.toContain('blue-on-blue');
+    expect(result.html).toContain('Visible text');
+    expect(result.html).toContain('Visible different colors');
+    expect(result.stats.sameColorText).toBeGreaterThan(0);
+  });
+
   it('preserves clean content unchanged', () => {
     const $ = cheerio.load(fixture('clean-page.html'));
     const result = sanitizeHtml($);
