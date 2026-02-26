@@ -39,8 +39,16 @@ function writeJson(path: string, data: unknown): void {
   writeFileSync(path, JSON.stringify(data, null, 2) + '\n', 'utf-8');
 }
 
+const CLAUDE_DIR = join(process.env.HOME || '', '.claude');
+
 function runInit(args: string[]): void {
   const dryRun = args.includes('--dry-run');
+
+  if (!dryRun && !existsSync(CLAUDE_DIR)) {
+    console.error('Error: ~/.claude/ directory not found.');
+    console.error('Install Claude Code first: https://docs.anthropic.com/en/docs/claude-code');
+    process.exit(1);
+  }
 
   if (dryRun) {
     console.log('Would add to ~/.claude.json:');
