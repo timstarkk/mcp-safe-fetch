@@ -1,3 +1,9 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="assets/banner-light.png">
+  <img alt="Safe Fetch vs Web Fetch — content sanitization for AI coding assistants" src="assets/banner-light.png">
+</picture>
+
 # mcp-safe-fetch
 
 Deterministic content sanitization MCP server for agentic coding tools. Strips prompt injection vectors from web-fetched content before it enters the LLM context.
