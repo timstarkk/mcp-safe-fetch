@@ -69,7 +69,7 @@ export async function startServer(): Promise<void> {
             reductionPercent: Math.round((1 - result.outputSize / result.inputSize) * 1000) / 10,
             durationMs,
           };
-          logSanitization(config.logFile, entry);
+          logSanitization(config.logFile, config.logMaxBytes, entry);
         }
 
         // Build summary of what was stripped

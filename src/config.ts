@@ -4,6 +4,7 @@ import { join } from 'node:path';
 export interface SanitizeConfig {
   logStripped: boolean;
   logFile: string;
+  logMaxBytes: number;
   allowDataUris: boolean;
   maxBase64DecodeLength: number;
   customPatterns: string[];
@@ -12,6 +13,7 @@ export interface SanitizeConfig {
 const DEFAULT_CONFIG: SanitizeConfig = {
   logStripped: false,
   logFile: '.claude/sanitize.log',
+  logMaxBytes: 10 * 1024 * 1024, // 10MB
   allowDataUris: false,
   maxBase64DecodeLength: 500,
   customPatterns: [],
