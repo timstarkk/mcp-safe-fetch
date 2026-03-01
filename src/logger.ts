@@ -4,7 +4,9 @@ import type { PipelineStats } from './sanitize/pipeline.js';
 
 export interface LogEntry {
   timestamp: string;
-  url: string;
+  tool: 'safe_fetch' | 'safe_read' | 'safe_exec';
+  source: string;
+  description?: string;
   stripped: PipelineStats;
   inputSize: number;
   outputSize: number;

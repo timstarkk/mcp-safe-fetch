@@ -1,6 +1,6 @@
 {
   "name": "mcp-safe-fetch",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Deterministic content sanitization MCP server for agentic coding tools",
   "type": "module",
   "main": "./dist/index.js",

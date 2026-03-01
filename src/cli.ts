@@ -43,6 +43,7 @@ const CLAUDE_DIR = join(process.env.HOME || '', '.claude');
 
 function runInit(args: string[]): void {
   const dryRun = args.includes('--dry-run');
+  const strict = args.includes('--strict');
 
   if (!dryRun && !existsSync(CLAUDE_DIR)) {
     console.error('Error: ~/.claude/ directory not found.');
@@ -50,11 +51,22 @@ function runInit(args: string[]): void {
     process.exit(1);
   }
 
+  const toolPerms: Record<string, string> = {
+    WebFetch: 'deny',
+    'mcp__safe-fetch__safe_fetch': 'allow',
+    'mcp__safe-fetch__safe_read': 'allow',
+    'mcp__safe-fetch__safe_exec': 'allow',
+  };
+  if (strict) {
+    toolPerms['Read'] = 'deny';
+    toolPerms['Bash'] = 'deny';
+  }
+
   if (dryRun) {
     console.log('Would add to ~/.claude.json:');
     console.log(JSON.stringify({ mcpServers: { 'safe-fetch': MCP_CONFIG } }, null, 2));
     console.log('\nWould add to ~/.claude/settings.json:');
-    console.log(JSON.stringify({ allowedTools: { WebFetch: 'deny', 'mcp__safe-fetch__safe_fetch': 'allow' } }, null, 2));
+    console.log(JSON.stringify({ allowedTools: toolPerms }, null, 2));
     return;
   }
 
@@ -67,15 +79,15 @@ function runInit(args: string[]): void {
   // Add tool permissions to ~/.claude/settings.json
   const settings = readJson<Settings>(SETTINGS_PATH);
   if (!settings.allowedTools) settings.allowedTools = {};
-  settings.allowedTools['WebFetch'] = 'deny';
-  settings.allowedTools['mcp__safe-fetch__safe_fetch'] = 'allow';
+  Object.assign(settings.allowedTools, toolPerms);
   writeJson(SETTINGS_PATH, settings);
 
   console.log('Updated ~/.claude.json:');
   console.log('  + mcpServers.safe-fetch (mcp-safe-fetch MCP server)');
   console.log('\nUpdated ~/.claude/settings.json:');
-  console.log('  + allowedTools.WebFetch: "deny"');
-  console.log('  + allowedTools.mcp__safe-fetch__safe_fetch: "allow"');
+  for (const [tool, perm] of Object.entries(toolPerms)) {
+    console.log(`  + allowedTools.${tool}: "${perm}"`);
+  }
   console.log('\nRestart Claude Code to activate.');
 }
 
@@ -99,7 +111,8 @@ async function runTest(args: string[]): Promise<void> {
   if (config.logStripped) {
     const entry: LogEntry = {
       timestamp: new Date().toISOString(),
-      url,
+      tool: 'safe_fetch',
+      source: url,
       stripped: result.stats,
       inputSize: result.inputSize,
       outputSize: result.outputSize,
@@ -184,7 +197,9 @@ function runStats(): void {
 
   console.log('  Recent:');
   for (const e of entries.slice(-5)) {
-    console.log(`    ${e.timestamp.slice(0, 19).replace('T', ' ')}  ${e.url}`);
+    const tool = e.tool || 'safe_fetch';
+    const source = e.source || (e as any).url || '?';
+    console.log(`    ${e.timestamp.slice(0, 19).replace('T', ' ')}  [${tool}] ${source}`);
   }
   console.log();
 }

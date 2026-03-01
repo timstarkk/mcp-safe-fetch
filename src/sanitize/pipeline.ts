@@ -45,6 +45,49 @@ const turndown = new TurndownService({
   preformattedCode: true,
 });
 
+const HTML_EXTENSIONS = new Set(['.html', '.htm', '.xhtml', '.svg']);
+const HTML_CONTENT_RE = /^\s*(<(!DOCTYPE|html)\b)/i;
+
+export function looksLikeHtml(content: string, filePath?: string): boolean {
+  if (filePath) {
+    const dot = filePath.lastIndexOf('.');
+    if (dot !== -1 && HTML_EXTENSIONS.has(filePath.slice(dot).toLowerCase())) return true;
+  }
+  return HTML_CONTENT_RE.test(content);
+}
+
+export function sanitizeText(text: string, config?: SanitizeConfig): PipelineResult {
+  const inputSize = text.length;
+  let content = text;
+
+  const unicodeResult = sanitizeUnicode(content);
+  content = unicodeResult.text;
+
+  const encodedResult = sanitizeEncoded(content, config);
+  content = encodedResult.text;
+
+  const exfilResult = sanitizeExfiltration(content);
+  content = exfilResult.text;
+
+  const delimiterResult = sanitizeDelimiters(content, config?.customPatterns);
+  content = delimiterResult.text;
+
+  return {
+    content,
+    stats: {
+      hiddenElements: 0, htmlComments: 0, scriptTags: 0,
+      styleTags: 0, noscriptTags: 0, metaTags: 0,
+      offScreenElements: 0, sameColorText: 0,
+      ...unicodeResult.stats,
+      ...encodedResult.stats,
+      ...exfilResult.stats,
+      ...delimiterResult.stats,
+    },
+    inputSize,
+    outputSize: content.length,
+  };
+}
+
 export function sanitize(html: string, config?: SanitizeConfig): PipelineResult {
   const inputSize = html.length;
 

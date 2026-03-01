@@ -6,16 +6,22 @@
 
 # mcp-safe-fetch
 
-Deterministic content sanitization MCP server for agentic coding tools. Strips prompt injection vectors from web-fetched content before it enters the LLM context.
+Deterministic content sanitization MCP server for agentic coding tools. Strips prompt injection vectors from untrusted content before it enters the LLM context.
 
-Drop-in replacement for Claude Code's built-in `WebFetch` — exposes a `safe_fetch` tool that fetches URLs, sanitizes the HTML, and returns clean markdown.
+Three tools that match the interface of Claude Code's native `WebFetch`, `Read`, and `Bash` — same parameters, same output format — with an invisible sanitization layer on top.
+
+- **`safe_fetch`** replaces `WebFetch` entirely. Web pages are always untrusted content — there's no reason to use the native tool.
+- **`safe_read`** is for reading untrusted files — cloned repos, downloaded files, vendored dependencies, anything you didn't write. Your own source code is fine with the native `Read`.
+- **`safe_exec`** is for commands that return untrusted content — `curl`, `gh pr view`, `git log` on external repos, `npm info`, etc. Normal dev commands like `npm run build` or `git status` don't need sanitization.
+
+By default, `init` only denies `WebFetch`. The native `Read` and `Bash` remain available for everyday use. Use `--strict` if you want to force everything through the safe tools.
 
 ## Why
 
-WebFetch dumps raw page content into your context window — JavaScript bundles, CSS, hidden elements, and all. That means:
+Claude Code's native tools pass raw content straight into your context window. That means:
 
 - **Wasted tokens**: a single Node.js docs page costs ~75K tokens through WebFetch vs ~2K through safe_fetch (97% reduction)
-- **Injection risk**: hidden `display:none` text, fake LLM delimiters, and encoded payloads pass straight through to Claude
+- **Injection risk**: hidden `display:none` text, fake LLM delimiters, zero-width characters, and encoded payloads in web pages, files, and command output pass straight through to Claude
 - **Worse results**: Claude parses through React hydration scripts instead of focusing on the actual content
 
 ## What it strips
@@ -61,19 +67,76 @@ Tested against 4 live sites:
 npx -y mcp-safe-fetch init
 ```
 
-This configures Claude Code to use `safe_fetch` and deny the built-in `WebFetch`. Restart Claude Code after running.
+This registers the MCP server, auto-allows the safe tools, and denies the native `WebFetch`. The native `Read` and `Bash` remain available for everyday use. Restart Claude Code after running.
 
-## Usage
+For stricter setups where you want everything routed through sanitization, also deny `Read` and `Bash`:
 
-### As MCP server (automatic)
-
-After `init`, Claude Code uses `safe_fetch` whenever it needs to read a URL. The sanitization header shows what was stripped:
-
-```
-[safe-fetch] Stripped: 5 hidden elements, 2 off-screen elements, 68 script tags | 284127 → 12720 bytes (219ms)
+```bash
+npx -y mcp-safe-fetch init --strict
 ```
 
-### CLI
+Preview what would change without writing anything:
+
+```bash
+npx -y mcp-safe-fetch init --dry-run
+```
+
+## Tools
+
+### `safe_fetch` — replaces WebFetch
+
+Fetch a URL and return sanitized markdown with injection vectors removed. This is a full replacement — web pages are always untrusted, so there's no reason to use the native `WebFetch`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `url` | `string` (required) | URL to fetch |
+| `prompt` | `string` | What information to extract from the page |
+
+```
+[safe-fetch] Stripped: 5 hidden elements, 68 script tags | 284127 → 12720 bytes (219ms)
+Prompt: Extract the API pricing table
+```
+
+### `safe_read` — safe alternative to Read
+
+Read a file and return sanitized content formatted as `cat -n` output. Use this for untrusted files — cloned repos, downloaded files, vendored dependencies. Your own source code is fine with the native `Read`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `file_path` | `string` (required) | Absolute path to the file |
+| `offset` | `number` | Line number to start from (1-based) |
+| `limit` | `number` | Number of lines to return (default: 2000) |
+
+Output matches the native Read tool exactly — right-justified 6-char line numbers, tab separator, lines > 2000 chars truncated with `...`. HTML files (`.html`, `.htm`, `.xhtml`, `.svg` or content starting with `<!DOCTYPE`/`<html>`) are routed through the full HTML sanitization pipeline. Binary files are detected and rejected.
+
+```
+[safe-read] Clean file | 1200 → 1200 bytes (3ms)
+
+     1	import express from 'express';
+     2	const app = express();
+```
+
+### `safe_exec` — safe alternative to Bash
+
+Execute a shell command and return sanitized stdout/stderr. Use this when the command output may contain untrusted content — `curl`, `gh pr view`, `git log` on external repos, `npm info`, etc. Normal dev commands like `npm run build` or `git status` don't need this.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `command` | `string` (required) | Shell command to execute |
+| `timeout` | `number` | Timeout in ms (default: 120000, max: 600000) |
+| `description` | `string` | Description of what the command does |
+
+Timeout defaults and caps match the native Bash tool. If the command output looks like HTML, it's routed through the full HTML pipeline (handles `curl` returning raw pages, etc). `timeout_ms` is still accepted as a deprecated alias.
+
+```
+[safe-exec] Show git status | Clean output | 245 → 245 bytes (12ms)
+```
+
+### `sanitize_stats`
+
+Show cumulative sanitization statistics for the current session across all tools.
+
+## CLI
 
 Test sanitization on any URL:
 
@@ -86,13 +149,6 @@ View aggregated stats from logged sanitization runs:
 ```bash
 npx -y mcp-safe-fetch stats
 ```
-
-### MCP tools
-
-| Tool | Description |
-|------|-------------|
-| `safe_fetch` | Fetch a URL and return sanitized markdown |
-| `sanitize_stats` | Show session sanitization statistics |
 
 ## Configuration
 
@@ -118,14 +174,21 @@ Optional. Create `.mcp-safe-fetch.json` in your project root or home directory:
 
 ## How it works
 
-1. Fetch URL with native `fetch`
-2. Parse HTML with [cheerio](https://cheerio.js.org/)
-3. Strip hidden elements, off-screen elements, same-color text, dangerous tags, comments
-4. Convert to markdown with [turndown](https://github.com/mixmark-io/turndown)
-5. Strip invisible unicode characters, normalize with NFKC
-6. Detect and remove encoded payloads (base64, hex, data URIs)
-7. Detect and neutralize exfiltration URLs in markdown images
-8. Strip fake LLM delimiters and custom patterns
+Two sanitization pipelines, selected automatically:
+
+**Full HTML pipeline** (web pages, HTML files, HTML-like command output):
+
+1. Parse HTML with [cheerio](https://cheerio.js.org/)
+2. Strip hidden elements, off-screen elements, same-color text, dangerous tags, comments
+3. Convert to markdown with [turndown](https://github.com/mixmark-io/turndown)
+4. Text sanitization (steps below)
+
+**Text pipeline** (source files, plain command output):
+
+1. Strip invisible unicode characters, normalize with NFKC
+2. Detect and remove encoded payloads (base64, hex, data URIs)
+3. Detect and neutralize exfiltration URLs in markdown images
+4. Strip fake LLM delimiters and custom patterns
 
 ## License
 
