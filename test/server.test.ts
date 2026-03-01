@@ -93,8 +93,8 @@ beforeAll(async () => {
       },
     },
     async ({ url, prompt }) => {
-      const promptLine = prompt ? `\nPrompt: ${prompt}\n` : '';
-      const header = `[safe-fetch] Clean page | 0 → 0 bytes${promptLine}\n`;
+      const promptLine = prompt ? `Prompt: ${prompt}\n\n` : '';
+      const header = `[safe-fetch] Clean page | 0 → 0 bytes\n\n${promptLine}`;
       return { content: [{ type: 'text' as const, text: header + `(mock fetch for ${url})` }] };
     },
   );

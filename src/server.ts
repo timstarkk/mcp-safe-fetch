@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { exec } from 'node:child_process';
 import { fetchUrl } from './fetch.js';
 import { sanitize, sanitizeText, looksLikeHtml, type PipelineStats, type PipelineResult } from './sanitize/pipeline.js';
@@ -55,7 +55,7 @@ function buildLogEntry(
     stripped: result.stats,
     inputSize: result.inputSize,
     outputSize: result.outputSize,
-    reductionPercent: Math.round((1 - result.outputSize / result.inputSize) * 1000) / 10,
+    reductionPercent: result.inputSize > 0 ? Math.round((1 - result.outputSize / result.inputSize) * 1000) / 10 : 0,
     durationMs,
   };
   if (description) entry.description = description;
@@ -133,10 +133,10 @@ export async function startServer(): Promise<void> {
         }
 
         const strippedItems = buildStrippedSummary(result.stats);
-        const promptLine = prompt ? `\nPrompt: ${prompt}\n` : '';
+        const promptLine = prompt ? `Prompt: ${prompt}\n\n` : '';
         const header = strippedItems.length > 0
-          ? `[safe-fetch] Stripped: ${strippedItems.join(', ')} | ${result.inputSize} → ${result.outputSize} bytes (${durationMs}ms)${promptLine}\n`
-          : `[safe-fetch] Clean page | ${result.inputSize} → ${result.outputSize} bytes (${durationMs}ms)${promptLine}\n`;
+          ? `[safe-fetch] Stripped: ${strippedItems.join(', ')} | ${result.inputSize} → ${result.outputSize} bytes (${durationMs}ms)\n\n${promptLine}`
+          : `[safe-fetch] Clean page | ${result.inputSize} → ${result.outputSize} bytes (${durationMs}ms)\n\n${promptLine}`;
 
         return {
           content: [{ type: 'text' as const, text: header + result.content }],
@@ -166,6 +166,15 @@ export async function startServer(): Promise<void> {
     async ({ file_path, offset, limit }) => {
       try {
         const startTime = Date.now();
+
+        const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+        const fileSize = statSync(file_path).size;
+        if (fileSize > MAX_FILE_SIZE) {
+          return {
+            content: [{ type: 'text' as const, text: `[safe-read] File too large (${Math.round(fileSize / 1024 / 1024)}MB, max 50MB): ${file_path}` }],
+            isError: true,
+          };
+        }
 
         const raw = readFileSync(file_path, 'utf-8');
 
