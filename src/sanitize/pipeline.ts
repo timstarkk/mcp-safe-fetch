@@ -57,7 +57,7 @@ export function looksLikeHtml(content: string, filePath?: string): boolean {
 }
 
 export function sanitizeText(text: string, config?: SanitizeConfig): PipelineResult {
-  const inputSize = text.length;
+  const inputSize = Buffer.byteLength(text);
   let content = text;
 
   const unicodeResult = sanitizeUnicode(content);
@@ -84,12 +84,12 @@ export function sanitizeText(text: string, config?: SanitizeConfig): PipelineRes
       ...delimiterResult.stats,
     },
     inputSize,
-    outputSize: content.length,
+    outputSize: Buffer.byteLength(content),
   };
 }
 
 export function sanitize(html: string, config?: SanitizeConfig): PipelineResult {
-  const inputSize = html.length;
+  const inputSize = Buffer.byteLength(html);
 
   // Step 1: Parse HTML with cheerio (htmlparser2 backend via /slim)
   const $ = cheerio.load(html);
@@ -116,7 +116,7 @@ export function sanitize(html: string, config?: SanitizeConfig): PipelineResult 
   const delimiterResult = sanitizeDelimiters(content, config?.customPatterns);
   content = delimiterResult.text;
 
-  const outputSize = content.length;
+  const outputSize = Buffer.byteLength(content);
 
   return {
     content,

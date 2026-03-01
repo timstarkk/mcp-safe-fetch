@@ -116,7 +116,7 @@ async function runTest(args: string[]): Promise<void> {
       stripped: result.stats,
       inputSize: result.inputSize,
       outputSize: result.outputSize,
-      reductionPercent: Math.round((1 - result.outputSize / result.inputSize) * 1000) / 10,
+      reductionPercent: result.inputSize > 0 ? Math.round((1 - result.outputSize / result.inputSize) * 1000) / 10 : 0,
       durationMs,
     };
     logSanitization(config.logFile, config.logMaxBytes, entry);
@@ -183,7 +183,7 @@ function runStats(): void {
   console.log(`\n  mcp-safe-fetch stats (${total} requests)\n`);
   console.log(`  Total input:   ${formatBytes(totalInput)}`);
   console.log(`  Total output:  ${formatBytes(totalOutput)}`);
-  console.log(`  Avg reduction: ${total > 0 ? Math.round((1 - totalOutput / totalInput) * 100) : 0}%`);
+  console.log(`  Avg reduction: ${totalInput > 0 ? Math.round((1 - totalOutput / totalInput) * 100) : 0}%`);
   console.log(`  Avg duration:  ${avgMs}ms\n`);
 
   const hasStripped = Object.values(stripped).some(v => v > 0);

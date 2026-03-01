@@ -5,99 +5,25 @@ import { tmpdir } from 'node:os';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
-import { readFileSync } from 'node:fs';
-import { exec } from 'node:child_process';
-import { sanitize, sanitizeText, looksLikeHtml } from '../src/sanitize/pipeline.js';
-import { loadConfig } from '../src/config.js';
-import { formatCatN } from '../src/server.js';
+import { createServer, formatCatN } from '../src/server.js';
+import type { FetchResult } from '../src/fetch.js';
 
 const TMP_DIR = join(tmpdir(), 'safe-fetch-test-' + Date.now());
 
 let client: Client;
 let server: McpServer;
 
+const mockFetchFn = async (url: string): Promise<FetchResult> => ({
+  html: `<html><body><p>Mock content for ${url}</p></body></html>`,
+  url,
+  status: 200,
+  contentType: 'text/html',
+});
+
 beforeAll(async () => {
   mkdirSync(TMP_DIR, { recursive: true });
 
-  // Create a minimal server with our tools registered
-  const config = loadConfig();
-  server = new McpServer({ name: 'safe-fetch-test', version: '0.0.1' });
-
-  // Register safe_read
-  server.registerTool(
-    'safe_read',
-    {
-      description: 'Read a file with sanitization',
-      inputSchema: {
-        file_path: z.string(),
-        offset: z.number().optional(),
-        limit: z.number().optional(),
-      },
-    },
-    async ({ file_path, offset, limit }) => {
-      const raw = readFileSync(file_path, 'utf-8');
-      const sample = raw.slice(0, 8192);
-      if (sample.includes('\0')) {
-        return { content: [{ type: 'text' as const, text: `[safe-read] Skipped binary file: ${file_path}` }], isError: true };
-      }
-      const result = looksLikeHtml(raw, file_path) ? sanitize(raw, config) : sanitizeText(raw, config);
-      const allLines = result.content.split('\n');
-      const startLine = Math.max(1, offset ?? 1);
-      const maxLines = limit ?? 2000;
-      const sliced = allLines.slice(startLine - 1, startLine - 1 + maxLines);
-      const formatted = formatCatN(sliced, startLine);
-      const header = `[safe-read] Clean file | ${result.inputSize} → ${result.outputSize} bytes\n\n`;
-      return { content: [{ type: 'text' as const, text: header + formatted }] };
-    },
-  );
-
-  // Register safe_exec
-  server.registerTool(
-    'safe_exec',
-    {
-      description: 'Execute a command with sanitization',
-      inputSchema: {
-        command: z.string(),
-        timeout: z.number().optional(),
-        timeout_ms: z.number().optional(),
-        description: z.string().optional(),
-      },
-    },
-    async ({ command, timeout: timeoutParam, timeout_ms, description }) => {
-      const rawTimeout = timeoutParam ?? timeout_ms ?? 120000;
-      const timeout = Math.min(rawTimeout, 600000);
-      const { stdout, stderr, exitCode } = await new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve) => {
-        exec(command, { timeout, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
-          const exitCode = error && 'code' in error ? (error.code as number) ?? 1 : 0;
-          resolve({ stdout: stdout || '', stderr: stderr || '', exitCode });
-        });
-      });
-      const combined = stderr ? `${stdout}\n--- stderr ---\n${stderr}` : stdout;
-      const result = looksLikeHtml(combined) ? sanitize(combined, config) : sanitizeText(combined, config);
-      const exitLabel = exitCode !== 0 ? ` exit=${exitCode}` : '';
-      const descLabel = description ? ` ${description} |` : '';
-      const header = `[safe-exec${exitLabel}]${descLabel} Clean output | ${result.inputSize} → ${result.outputSize} bytes\n\n`;
-      return { content: [{ type: 'text' as const, text: header + result.content }] };
-    },
-  );
-
-  // Register safe_fetch (minimal — we won't test actual URL fetching)
-  server.registerTool(
-    'safe_fetch',
-    {
-      description: 'Fetch with sanitization',
-      inputSchema: {
-        url: z.string().url(),
-        prompt: z.string().optional(),
-      },
-    },
-    async ({ url, prompt }) => {
-      const promptLine = prompt ? `Prompt: ${prompt}\n\n` : '';
-      const header = `[safe-fetch] Clean page | 0 → 0 bytes\n\n${promptLine}`;
-      return { content: [{ type: 'text' as const, text: header + `(mock fetch for ${url})` }] };
-    },
-  );
+  server = createServer({ fetchFn: mockFetchFn });
 
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
@@ -221,7 +147,10 @@ describe('safe_read', () => {
     const text = (result.content as any)[0].text as string;
 
     expect(text).toContain('visible');
-    expect(text).not.toContain('hidden');
+    // The hidden div content was stripped — only "hidden" in the header stats is OK
+    expect(text).toContain('hidden elements');
+    expect(text).not.toContain('>hidden<');
+    expect(text).not.toContain('\thidden');
   });
 
   it('returns error for nonexistent file', async () => {
@@ -256,8 +185,6 @@ describe('safe_exec', () => {
   });
 
   it('caps timeout at 600000ms', async () => {
-    // We can't easily test the timeout value directly, but we can verify it doesn't crash
-    // when given a value above 600000
     const result = await client.callTool({ name: 'safe_exec', arguments: { command: 'echo ok', timeout: 999999 } });
     const text = (result.content as any)[0].text as string;
 
@@ -275,6 +202,14 @@ describe('safe_exec', () => {
 // ── safe_fetch integration tests ──────────────────────────────
 
 describe('safe_fetch', () => {
+  it('returns sanitized content from fetched HTML', async () => {
+    const result = await client.callTool({ name: 'safe_fetch', arguments: { url: 'https://example.com' } });
+    const text = (result.content as any)[0].text as string;
+
+    expect(text).toContain('[safe-fetch]');
+    expect(text).toContain('Mock content for https://example.com');
+  });
+
   it('echoes prompt in response header', async () => {
     const result = await client.callTool({ name: 'safe_fetch', arguments: { url: 'https://example.com', prompt: 'Extract the main heading' } });
     const text = (result.content as any)[0].text as string;
@@ -288,5 +223,30 @@ describe('safe_fetch', () => {
 
     expect(text).toContain('[safe-fetch]');
     expect(text).not.toContain('Prompt:');
+  });
+
+  it('runs fetched HTML through full sanitize pipeline', async () => {
+    const maliciousFetch = async (url: string): Promise<FetchResult> => ({
+      html: '<html><body><div style="display:none">injected</div><p>legit</p></body></html>',
+      url,
+      status: 200,
+      contentType: 'text/html',
+    });
+
+    const maliciousServer = createServer({ fetchFn: maliciousFetch });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await maliciousServer.connect(st);
+    const c = new Client({ name: 'test-malicious', version: '1.0' });
+    await c.connect(ct);
+
+    const result = await c.callTool({ name: 'safe_fetch', arguments: { url: 'https://evil.com' } });
+    const text = (result.content as any)[0].text as string;
+
+    expect(text).toContain('legit');
+    expect(text).not.toContain('injected');
+    expect(text).toContain('hidden elements');
+
+    await c.close();
+    await maliciousServer.close();
   });
 });

@@ -3,10 +3,14 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { readFileSync, statSync } from 'node:fs';
 import { exec } from 'node:child_process';
-import { fetchUrl } from './fetch.js';
+import { fetchUrl, type FetchResult } from './fetch.js';
 import { sanitize, sanitizeText, looksLikeHtml, type PipelineStats, type PipelineResult } from './sanitize/pipeline.js';
 import { loadConfig } from './config.js';
 import { logSanitization, type LogEntry } from './logger.js';
+
+export interface CreateServerOptions {
+  fetchFn?: (url: string) => Promise<FetchResult>;
+}
 
 interface SessionStats {
   totalRequests: number;
@@ -81,8 +85,9 @@ function execCommand(command: string, timeoutMs: number): Promise<{ stdout: stri
   });
 }
 
-export async function startServer(): Promise<void> {
+export function createServer(options?: CreateServerOptions): McpServer {
   const config = loadConfig();
+  const fetchFn = options?.fetchFn ?? fetchUrl;
   const session: SessionStats = {
     totalRequests: 0,
     totalStripped: {
@@ -121,7 +126,7 @@ export async function startServer(): Promise<void> {
       try {
         const startTime = Date.now();
 
-        const fetched = await fetchUrl(url);
+        const fetched = await fetchFn(url);
         const result = sanitize(fetched.html, config);
         const durationMs = Date.now() - startTime;
 
@@ -318,6 +323,11 @@ export async function startServer(): Promise<void> {
     },
   );
 
+  return server;
+}
+
+export async function startServer(): Promise<void> {
+  const server = createServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error('[safe-fetch] MCP server running on stdio');

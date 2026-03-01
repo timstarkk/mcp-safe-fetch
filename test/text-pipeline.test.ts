@@ -63,8 +63,8 @@ describe('sanitizeText', () => {
   it('tracks input and output sizes', () => {
     const input = 'Hello\u200BWorld';
     const result = sanitizeText(input);
-    expect(result.inputSize).toBe(input.length);
-    expect(result.outputSize).toBe('HelloWorld'.length);
+    expect(result.inputSize).toBe(Buffer.byteLength(input));
+    expect(result.outputSize).toBe(Buffer.byteLength('HelloWorld'));
   });
 
   it('returns clean result for normal text', () => {

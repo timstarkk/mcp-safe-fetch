@@ -8,7 +8,7 @@
 
 Deterministic content sanitization MCP server for agentic coding tools. Strips prompt injection vectors from untrusted content before it enters the LLM context.
 
-Three tools that match the interface of Claude Code's native `WebFetch`, `Read`, and `Bash` — same parameters, same output format — with an invisible sanitization layer on top.
+Three tools that match the core interface of Claude Code's native `WebFetch`, `Read`, and `Bash` — compatible parameters, same output format — with an invisible sanitization layer on top.
 
 - **`safe_fetch`** replaces `WebFetch` entirely. Web pages are always untrusted content — there's no reason to use the native tool.
 - **`safe_read`** is for reading untrusted files — cloned repos, downloaded files, vendored dependencies, anything you didn't write. Your own source code is fine with the native `Read`.
@@ -75,11 +75,27 @@ For stricter setups where you want everything routed through sanitization, also 
 npx -y mcp-safe-fetch init --strict
 ```
 
+> **Note:** `safe_exec` sanitizes command *output* but does not run commands in Claude Code's sandbox. In `--strict` mode you gain output sanitization but lose sandbox protection on command execution.
+
 Preview what would change without writing anything:
 
 ```bash
 npx -y mcp-safe-fetch init --dry-run
 ```
+
+### Recommended CLAUDE.md rules
+
+Add this to your `CLAUDE.md` so Claude knows when to use the safe tools:
+
+```markdown
+## Web Fetching / Untrusted Content
+
+When you need to fetch/read the content of a URL, always use the `safe_fetch` MCP tool. Do not use WebFetch, Playwright, or Chrome DevTools to load web pages.
+When reading files from cloned repos, downloaded archives, or vendored dependencies, use `safe_read` instead of `Read`.
+When running commands that return untrusted output (curl, gh pr view, git log on external repos), use `safe_exec` instead of `Bash`.
+```
+
+Without these rules, Claude will default to the native `Read` and `Bash` tools. `safe_fetch` works automatically because `init` denies `WebFetch`, but `safe_read` and `safe_exec` need explicit instructions to be used.
 
 ## Tools
 
@@ -168,6 +184,7 @@ Optional. Create `.mcp-safe-fetch.json` in your project root or home directory:
 |--------|---------|-------------|
 | `logStripped` | `false` | Log sanitization stats to JSONL file |
 | `logFile` | `.claude/sanitize.log` | Log file path |
+| `logMaxBytes` | `10485760` (10 MB) | Max log file size before rotation |
 | `allowDataUris` | `false` | Allow text/* data URIs through |
 | `maxBase64DecodeLength` | `500` | Max base64 string length to decode and inspect |
 | `customPatterns` | `[]` | Literal strings to strip (case-insensitive) |
