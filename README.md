@@ -1,16 +1,10 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="assets/banner-light.png">
-  <img alt="Safe Fetch vs Web Fetch — content sanitization for AI coding assistants" src="assets/banner-light.png">
-</picture>
-
 # mcp-safe-fetch
 
 Deterministic content sanitization MCP server for agentic coding tools. Strips prompt injection vectors from untrusted content before it enters the LLM context.
 
 Three tools that match the core interface of Claude Code's native `WebFetch`, `Read`, and `Bash` — compatible parameters, same output format — with an invisible sanitization layer on top.
 
-- **`safe_fetch`** replaces `WebFetch` entirely. Web pages are always untrusted content — there's no reason to use the native tool.
+- **`safe_fetch`** replaces `WebFetch` entirely. Web pages are always untrusted content, and safe_fetch provides deterministic sanitization — no model in the loop, nothing to prompt-inject.
 - **`safe_read`** is for reading untrusted files — cloned repos, downloaded files, vendored dependencies, anything you didn't write. Your own source code is fine with the native `Read`.
 - **`safe_exec`** is for commands that return untrusted content — `curl`, `gh pr view`, `git log` on external repos, `npm info`, etc. Normal dev commands like `npm run build` or `git status` don't need sanitization.
 
@@ -18,11 +12,11 @@ By default, `init` only denies `WebFetch`. The native `Read` and `Bash` remain a
 
 ## Why
 
-Claude Code's native tools pass raw content straight into your context window. That means:
+Claude Code's `WebFetch` runs content through Turndown and a secondary LLM before it reaches your context — but that pipeline wasn't designed as a security boundary. Turndown strips structural HTML (scripts, styles, nav) but text-level injection vectors survive the conversion: zero-width characters, fake LLM delimiters, base64 payloads, markdown exfiltration URLs. And using an LLM to filter adversarial content is circular — the summarization model is processing the exact payloads designed to manipulate it.
 
-- **Wasted tokens**: a single Node.js docs page costs ~75K tokens through WebFetch vs ~2K through safe_fetch (97% reduction)
-- **Injection risk**: hidden `display:none` text, fake LLM delimiters, zero-width characters, and encoded payloads in web pages, files, and command output pass straight through to Claude
-- **Worse results**: Claude parses through React hydration scripts instead of focusing on the actual content
+Outside Claude Code, the problem is worse. API-level `web_fetch`, other MCP clients, `curl` output, cloned repos — raw untrusted content enters the LLM context with no sanitization at all.
+
+`mcp-safe-fetch` provides deterministic sanitization — regex, cheerio, string processing. No model in the loop, nothing to prompt-inject.
 
 ## What it strips
 
@@ -52,14 +46,14 @@ Claude Code's native tools pass raw content straight into your context window. T
 
 Tested against 4 live sites:
 
-| Site | WebFetch tokens (est.) | safe_fetch tokens | Reduction | Threats caught |
+| Site | Raw HTML tokens | safe_fetch tokens | Reduction | Threats caught |
 |------|----------------------|-------------------|-----------|----------------|
 | PayloadsAllTheThings | ~39,500 | ~7,800 | 80% | 3 hidden elements, 4 LLM delimiters |
 | FotMob news article | ~109,500 | ~5,900 | 95% | 32 script tags, 90 style tags |
 | Node.js docs | ~75,500 | ~2,100 | 97% | 2 hidden elements, 1 off-screen |
 | Express.js | ~9,400 | ~1,400 | 86% | Clean page |
 
-**93% average token reduction. Zero false positives.** All visible page content preserved.
+**93% average reduction vs raw HTML. Zero false positives.** All visible page content preserved.
 
 ## Install
 
