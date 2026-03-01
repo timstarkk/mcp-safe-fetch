@@ -1,5 +1,11 @@
 # mcp-safe-fetch
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagram-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="assets/diagram-light.png">
+  <img alt="How Content Reaches Your LLM — three paths, three levels of protection" src="assets/diagram-light.png">
+</picture>
+
 Deterministic content sanitization MCP server for agentic coding tools. Strips prompt injection vectors from untrusted content before it enters the LLM context.
 
 Three tools that match the core interface of Claude Code's native `WebFetch`, `Read`, and `Bash` — compatible parameters, same output format — with an invisible sanitization layer on top.
